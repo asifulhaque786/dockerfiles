@@ -11,19 +11,26 @@ PG_BIN=/usr/lib/postgresql/$PG_VERSION/bin
 DUMP_SIZE_COEFF=5
 ERRORCOUNT=0
 POSTGRES_OPERATOR=spilo
+PGDATABASE=${PGDATABASE:-}
 LOGICAL_BACKUP_PROVIDER=${LOGICAL_BACKUP_PROVIDER:="s3"}
 LOGICAL_BACKUP_S3_RETENTION_TIME=${LOGICAL_BACKUP_S3_RETENTION_TIME:=""}
 LOGICAL_BACKUP_S3_ENDPOINT=${LOGICAL_BACKUP_S3_ENDPOINT:-}
+
+if [[ "${USE_PG_DUMP:-}" == "true" ]]; then
+  BACKUP_EXTENSION="dump.gz"
+else
+  BACKUP_EXTENSION="sql.gz"
+fi
 
 function estimate_size {
   "$PG_BIN"/psql -tqAc "${ALL_DB_SIZE_QUERY}"
 }
 
 function dump {
-  echo "Taking dump from ${PGHOST} using ${USE_PG_DUMP:-pg_dumpall}"
+  echo "Taking dump from ${PGHOST} using ${USE_PG_DUMP:-pg_dumpall}" >&2
 
   if [[ "${USE_PG_DUMP:-}" == "true" ]]; then
-    "$PG_BIN"/pg_dump
+    "$PG_BIN"/pg_dump -Fc --dbname="$PGDATABASE"
   else
     "$PG_BIN"/pg_dumpall --exclude-database='postgres'
   fi
@@ -34,7 +41,7 @@ function compress {
 }
 
 function az_upload {
-  PATH_TO_BACKUP="${LOGICAL_BACKUP_S3_BUCKET}/${POSTGRES_OPERATOR}/${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}/logical_backups/$(date +%s).sql.gz"
+  PATH_TO_BACKUP="${LOGICAL_BACKUP_S3_BUCKET}/${POSTGRES_OPERATOR}/${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}/logical_backups/$(date +%s).${BACKUP_EXTENSION}"
 
   az storage blob upload --file "${1}" --account-name "${LOGICAL_BACKUP_AZURE_STORAGE_ACCOUNT_NAME}" --account-key "${LOGICAL_BACKUP_AZURE_STORAGE_ACCOUNT_KEY}" -c "${LOGICAL_BACKUP_AZURE_STORAGE_CONTAINER}" -n "${PATH_TO_BACKUP}"
 }
@@ -96,7 +103,7 @@ function aws_upload {
   # mimic bucket setup from Spilo
   # to keep logical backups at the same path as WAL
   # NB: $LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX already contains the leading "/" when set by the Postgres Operator
-  PATH_TO_BACKUP=s3://${LOGICAL_BACKUP_S3_BUCKET}"/"${POSTGRES_OPERATOR}"/"${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}"/logical_backups/"$(date +%s).sql.gz
+  PATH_TO_BACKUP=s3://${LOGICAL_BACKUP_S3_BUCKET}"/"${POSTGRES_OPERATOR}"/"${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}"/logical_backups/"$(date +%s).${BACKUP_EXTENSION}
 
   args=()
 
@@ -109,7 +116,7 @@ function aws_upload {
 }
 
 function gcs_upload {
-  PATH_TO_BACKUP=gs://${LOGICAL_BACKUP_S3_BUCKET}"/"${POSTGRES_OPERATOR}"/"${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}"/logical_backups/"$(date +%s).sql.gz
+  PATH_TO_BACKUP=gs://${LOGICAL_BACKUP_S3_BUCKET}"/"${POSTGRES_OPERATOR}"/"${LOGICAL_BACKUP_S3_BUCKET_SCOPE_SUFFIX}"/logical_backups/"$(date +%s).${BACKUP_EXTENSION}
 
   gsutil -o Credentials:gs_service_key_file=${LOGICAL_BACKUP_GOOGLE_APPLICATION_CREDENTIALS} cp - "${PATH_TO_BACKUP}"
 }
@@ -126,9 +133,10 @@ function upload {
   esac
 }
 
-if [ "$LOGICAL_BACKUP_PROVIDER" == "az" ]; then
-  dump | compress > /tmp/azure-backup.sql.gz
-  az_upload /tmp/azure-backup.sql.gz
+if [[ "$LOGICAL_BACKUP_PROVIDER" == "az" ]]; then
+  dump | compress > /tmp/azure-backup.${BACKUP_EXTENSION}
+  az_upload /tmp/azure-backup.${BACKUP_EXTENSION}
+
 else
   dump | compress | upload
   [[ ${PIPESTATUS[0]} != 0 || ${PIPESTATUS[1]} != 0 || ${PIPESTATUS[2]} != 0 ]] && (( ERRORCOUNT += 1 ))
