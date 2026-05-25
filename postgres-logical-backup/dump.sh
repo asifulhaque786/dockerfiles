@@ -54,7 +54,9 @@ function aws_delete_objects {
   [[ ! -z "${LOGICAL_BACKUP_S3_ENDPOINT}" ]] && args+=("--endpoint-url=${LOGICAL_BACKUP_S3_ENDPOINT}")
   [[ ! -z "${LOGICAL_BACKUP_S3_REGION}" ]] && args+=("--region=${LOGICAL_BACKUP_S3_REGION}")
 
-  aws s3api delete-objects "${args[@]}" --delete Objects=["$(printf \{Key=%q\}, "$@")"],Quiet=true
+  for key in "$@"; do
+    aws s3api delete-object "${args[@]}" --key "$key"
+  done
 }
 export -f aws_delete_objects
 
@@ -141,5 +143,6 @@ else
   dump | compress | upload
   [[ ${PIPESTATUS[0]} != 0 || ${PIPESTATUS[1]} != 0 || ${PIPESTATUS[2]} != 0 ]] && (( ERRORCOUNT += 1 ))
   set +x
+
   exit $ERRORCOUNT
 fi
