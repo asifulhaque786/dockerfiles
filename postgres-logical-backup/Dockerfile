@@ -1,4 +1,4 @@
-FROM ubuntu:jammy
+FROM ubuntu:resolute
 LABEL maintainer="Divyam Azad divyam@obmondo.com"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -16,13 +16,18 @@ RUN apt-get update     \
         gnupg \
         gcc \
         libffi-dev \
+        unzip \
     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
-    && pip3 install --upgrade pip \
-    && pip3 install --no-cache-dir awscli --upgrade \
-    && pip3 install --no-cache-dir gsutil --upgrade \
-    && echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && export CPU_ARCHITECTURE=$([ "$(uname -m)" = "x86_64" ] && echo "x86_64" || echo "aarch64") \
+    && curl -sSf "https://awscli.amazonaws.com/awscli-exe-linux-${CPU_ARCHITECTURE}.zip" -o /tmp/awscli.zip \
+    && unzip -q /tmp/awscli.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/awscli.zip /tmp/aws \
+    && pip3 install --no-cache-dir --break-system-packages gsutil \
+    && mkdir -p /etc/apt/keyrings \
+    && curl --silent https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor > /etc/apt/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && cat /etc/apt/sources.list.d/pgdg.list \
-    && curl --silent https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
     && apt-get update \
     && apt-get install --no-install-recommends -y  \
         postgresql-client-18  \

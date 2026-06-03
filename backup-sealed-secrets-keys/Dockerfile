@@ -1,7 +1,7 @@
 # Creator  David Darville - bw7
 # Maintainer Divyam Azad <nihaldivyam@gmail.com>
 # Start with Ubuntu LTS 22.04
-FROM ubuntu:jammy
+FROM ubuntu:resolute
 
 RUN apt-get update
 # Otherwise, the install requires keyboard interaction
